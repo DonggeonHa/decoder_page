@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>QR GZIP Decoder</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main>
+    <header>
+      <h1>QR GZIP Decoder</h1>
+      <p>QR 안의 RAW, GZ, GZQR 데이터를 브라우저 안에서만 해제합니다.</p>
+    </header>
+
+    <section class="panel">
+      <div class="section-title">
+        <h2>Scanner</h2>
+        <span id="capabilityBadge" class="badge">Checking</span>
+      </div>
+
+      <div id="environmentWarning" class="notice hidden"></div>
+
+      <div class="scanner-shell">
+        <video id="video" playsinline muted></video>
+        <div id="scannerOverlay">카메라가 꺼져 있습니다.</div>
+      </div>
+
+      <div class="actions">
+        <button id="scanSingleBtn" class="primary" type="button">단일 QR 스캔</button>
+        <button id="scanMultiBtn" type="button">멀티 QR 스캔 시작</button>
+        <button id="stopScanBtn" type="button" disabled>스캔 중지</button>
+      </div>
+
+      <div id="scanStatus" class="status">스캔 대기 중</div>
+      <div id="multiStatus" class="multi-status hidden"></div>
+    </section>
+
+    <section class="panel">
+      <div class="section-title">
+        <h2>Input</h2>
+        <span id="inputMeter" class="meter">0 chars</span>
+      </div>
+      <textarea id="input" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="RAW:, GZ:, 또는 GZQR: 값을 붙여넣거나 스캔하세요."></textarea>
+      <div class="actions">
+        <button id="decodeBtn" class="primary" type="button">Decode</button>
+        <button id="pasteBtn" type="button">Paste</button>
+        <button id="clearBtn" type="button">Clear</button>
+      </div>
+      <div id="status"></div>
+    </section>
+
+    <section class="panel">
+      <div class="section-title">
+        <h2>Output</h2>
+        <span id="outputMeter" class="meter">0 chars</span>
+      </div>
+      <textarea id="output" spellcheck="false" readonly placeholder="Decoded text"></textarea>
+      <div class="actions">
+        <button id="copyBtn" type="button">Copy Output</button>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
