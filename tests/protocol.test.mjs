@@ -15,6 +15,13 @@ test("parses single RAW payload", () => {
   });
 });
 
+test("RAW payload parsing trims boundary whitespace by contract", () => {
+  assert.deepEqual(parseQrPayload("RAW:\n  hello \n"), {
+    type: "raw",
+    text: "hello"
+  });
+});
+
 test("parses single GZIP payload", () => {
   assert.deepEqual(parseQrPayload("GZ:\nabc_def-123"), {
     type: "gzip",
@@ -56,4 +63,17 @@ test("rejects chunks from a different group", () => {
   const result = addMultiChunk(collector, parseQrPayload("GZQR:v1:logB:2:2:BBB"));
   assert.equal(result.ok, false);
   assert.match(result.reason, /Different QR group/);
+});
+
+test("rejects conflicting duplicate index without overwriting the first chunk", () => {
+  const collector = createMultiCollector();
+
+  assert.equal(addMultiChunk(collector, parseQrPayload("GZQR:v1:logA:1:2:AAA")).ok, true);
+
+  const conflict = addMultiChunk(collector, parseQrPayload("GZQR:v1:logA:1:2:XXX"));
+  assert.equal(conflict.ok, false);
+  assert.match(conflict.reason, /Conflicting chunk/);
+
+  assert.equal(addMultiChunk(collector, parseQrPayload("GZQR:v1:logA:2:2:BBB")).complete, true);
+  assert.equal(assembleMultiGzip(collector), "GZ:AAABBB");
 });

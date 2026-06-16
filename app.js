@@ -22,6 +22,7 @@ var video = document.getElementById("video");
 var scannerOverlay = document.getElementById("scannerOverlay");
 var scanSingleBtn = document.getElementById("scanSingleBtn");
 var scanMultiBtn = document.getElementById("scanMultiBtn");
+var resetMultiBtn = document.getElementById("resetMultiBtn");
 var stopScanBtn = document.getElementById("stopScanBtn");
 
 var mode = "single";
@@ -161,6 +162,7 @@ async function handleMultiPayload(payload) {
 
   if (!result.ok) {
     setScanStatus(result.reason, "error");
+    renderMultiStatus("조각 처리 실패");
     return;
   }
 
@@ -183,10 +185,12 @@ function renderMultiStatus(prefix) {
   if (!collector.id) {
     multiStatus.classList.add("hidden");
     multiStatus.textContent = "";
+    resetMultiBtn.disabled = true;
     return;
   }
 
   multiStatus.classList.remove("hidden");
+  resetMultiBtn.disabled = false;
   multiStatus.textContent = [
     prefix || "멀티 QR 수집 중",
     "ID: " + collector.id,
@@ -201,13 +205,20 @@ function resetMultiCollector() {
   renderMultiStatus("");
 }
 
+function resetMultiScan() {
+  resetMultiCollector();
+  input.value = "";
+  updateMeters();
+  setScanStatus(mode === "multi" ? "멀티 QR 수집을 초기화했습니다. 다시 스캔하세요." : "멀티 QR 수집을 초기화했습니다.", "ok");
+}
+
 async function startScanner(nextMode) {
   mode = nextMode;
   if (mode === "multi") {
     resetMultiCollector();
     setScanStatus("멀티 QR 스캔을 시작합니다. 아무 순서로 스캔해도 됩니다.");
   } else {
-    multiStatus.classList.add("hidden");
+    resetMultiCollector();
     setScanStatus("단일 QR 스캔을 시작합니다.");
   }
 
@@ -270,6 +281,7 @@ scanSingleBtn.onclick = function () {
 scanMultiBtn.onclick = function () {
   startScanner("multi");
 };
+resetMultiBtn.onclick = resetMultiScan;
 stopScanBtn.onclick = function () {
   scanner.stop();
   setScanButtons(false);

@@ -110,6 +110,13 @@ export function addMultiChunk(collector, payload) {
     };
   }
 
+  if (collector.chunks[payload.index] && collector.chunks[payload.index] !== payload.chunk) {
+    return {
+      ok: false,
+      reason: "Conflicting chunk for QR index " + payload.index + ". Reset multi QR and scan the same group again."
+    };
+  }
+
   var duplicate = collector.chunks[payload.index] === payload.chunk;
   collector.chunks[payload.index] = payload.chunk;
 
