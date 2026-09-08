@@ -4,10 +4,12 @@ const jsp = readFileSync('artifacts/offline-log-qr-generator.jsp', 'utf8').repla
 const code = (text, language = 'java') => '\n```' + language + '\n' + text.trim() + '\n```\n';
 function method(name) {
   // Locate by the declaration line instead of a call site.
-  const match = new RegExp('^public static [^\\n]+ ' + name + '\\([^\\n]*', 'm').exec(jsp);
+  const match = new RegExp('^([ \\t]*)public static [^\\n]+ ' + name + '\\([^\\n]*', 'm').exec(jsp);
   if (!match) throw new Error('Method not found: ' + name);
-  const end = jsp.indexOf('\n}', match.index);
-  return jsp.slice(match.index, end + 2);
+  const closing = '\n' + match[1] + '}';
+  const end = jsp.indexOf(closing, match.index);
+  if (end < 0) throw new Error('Method end not found: ' + name);
+  return jsp.slice(match.index, end + closing.length);
 }
 function block(start, end) {
   const from = jsp.indexOf(start);
@@ -16,10 +18,16 @@ function block(start, end) {
   return jsp.slice(from, to);
 }
 const buildMethods = block('public static List<QrPayload> buildPayloads(String log)', 'public static String gzipBase64Url');
-const requestBlock = block('<%\n// Must precede getParameter()', '<!DOCTYPE html>');
+const declarationStart = jsp.indexOf('<%!');
+const declarationEnd = jsp.indexOf('%>', declarationStart);
+if (declarationStart < 0 || declarationEnd < 0) throw new Error('JSP declaration not found');
+const requestStart = jsp.indexOf('<%', declarationEnd + 2);
+const requestEnd = jsp.indexOf('%>', requestStart);
+if (requestStart < 0 || requestEnd < 0) throw new Error('JSP request block not found');
+const requestBlock = jsp.slice(requestStart, requestEnd + 2);
 const style = block('<style>', '</head>');
 const player = block('<div class="player-area">', '<div class="payload-debug-list">');
-const script = block('<script>\n// BEGIN QR PLAYER', '<% } %>\n</div>\n</body>');
+const script = block('<script>', '</script>') + '</script>';
 let guide = `# JSP 수동 반영 가이드 — Java 8 / 기존 ZXing / 최대 200장
 
 기준은 대화에서 보내주신 **0.5초 재생 플레이어가 있는 JSP**입니다. GitHub의 예전 카드 나열형 JSP를 기준으로 찾을 필요는 없습니다.
@@ -28,7 +36,8 @@ let guide = `# JSP 수동 반영 가이드 — Java 8 / 기존 ZXing / 최대 20
 
 아래 순서대로 기존 코드를 **교체**하세요. 같은 메서드나 script를 아래에 덧붙이면 중복 선언 또는 타이머 충돌이 생깁니다. 기존 파일은 별도 이름으로 보관한 뒤 시작하세요. 설명 문장은 입력하지 않고 코드 블록만 입력합니다. 들여쓰기는 달라도 되지만 따옴표, 역슬래시, 대소문자는 같아야 합니다.
 
-외부 QR JAR과 import 추가는 없습니다. 새로 사용한 WritableRaster와 MemoryCacheImageOutputStream은 Java 8 기본 클래스이며 코드에서 전체 이름을 사용합니다. 전달용 JSP만 인트라넷에 반영하면 됩니다. 검증용 scripts/tests/.test-deps는 WAS에 복사하지 않습니다.
+추가 QR 라이브러리는 없습니다. 최신 JSP는 Java 8 기본 클래스인 WritableRaster와 MemoryCacheImageOutputStream을 import해서 사용합니다. 기존 파일에 아래 두 import가 없으면 추가하세요. 앞서 안내한 전체 클래스 이름을 사용하는 방식도 유효합니다. 검증용 scripts/tests/.test-deps는 WAS에 복사하지 않습니다.
+` + code('<%@page import="java.awt.image.WritableRaster"%>\n<%@page import="javax.imageio.stream.MemoryCacheImageOutputStream"%>', 'jsp') + `
 
 ## 1. 상수 확인
 

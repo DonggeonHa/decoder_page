@@ -6,24 +6,36 @@
 
 아래 순서대로 기존 코드를 **교체**하세요. 같은 메서드나 script를 아래에 덧붙이면 중복 선언 또는 타이머 충돌이 생깁니다. 기존 파일은 별도 이름으로 보관한 뒤 시작하세요. 설명 문장은 입력하지 않고 코드 블록만 입력합니다. 들여쓰기는 달라도 되지만 따옴표, 역슬래시, 대소문자는 같아야 합니다.
 
-외부 QR JAR과 import 추가는 없습니다. 새로 사용한 WritableRaster와 MemoryCacheImageOutputStream은 Java 8 기본 클래스이며 코드에서 전체 이름을 사용합니다. 전달용 JSP만 인트라넷에 반영하면 됩니다. 검증용 scripts/tests/.test-deps는 WAS에 복사하지 않습니다.
+추가 QR 라이브러리는 없습니다. 최신 JSP는 Java 8 기본 클래스인 WritableRaster와 MemoryCacheImageOutputStream을 import해서 사용합니다. 기존 파일에 아래 두 import가 없으면 추가하세요. 앞서 안내한 전체 클래스 이름을 사용하는 방식도 유효합니다. 검증용 scripts/tests/.test-deps는 WAS에 복사하지 않습니다.
+
+```jsp
+<%@page import="java.awt.image.WritableRaster"%>
+<%@page import="javax.imageio.stream.MemoryCacheImageOutputStream"%>
+```
+
 
 ## 1. 상수 확인
 
 기존 MAX_QR_COUNT의 50을 200으로 바꿉니다. MAX_SOURCE_BYTES는 보내주신 값인 1000000을 유지합니다. 나머지 값도 아래와 맞춥니다.
 
 ```java
-static final String RAW_PREFIX = "RAW:\n";
-static final String GZIP_PREFIX = "GZ:\n";
-static final String GZQR_PREFIX = "GZQR:v1:";
-static final int RAW_SINGLE_LIMIT = 800;
-static final int GZ_SINGLE_LIMIT = 1400;
-static final int GZQR_CHUNK_SIZE = 1200;
-static final int GZQR_PAYLOAD_LIMIT = 1500;
-static final int QR_IMAGE_SIZE = 420;
-static final int FRAME_DELAY_MS = 500;
-static final int MAX_SOURCE_BYTES = 1000000;
-static final int MAX_QR_COUNT = 200;
+static final String RAW_PREFIX  = "RAW:\n";
+	static final String GZIP_PREFIX = "GZ:\n";
+	static final String GZQR_PREFIX = "GZQR:v1:";
+
+	// QR 안정성을 위해 보수적으로 잡은 기준값입니다. 아래 범위는 Java 제한이 아니라 모바일 스캔 안정성 기준입니다.
+	static final int RAW_SINGLE_LIMIT 	= 800;	// 권장 500 ~ 1200 bytes. 기본 800. 1200 초과 원문은 QR이 조밀해져 GZIP 권장
+	static final int GZ_SINGLE_LIMIT 	= 1400;	// 권장 1000 ~ 1600 bytes. 실기기 스캔 검증 후 1800 까지 검증 가능
+	static final int GZQR_CHUNK_SIZE 	= 1200;	// 권장 1000 ~ 1500 chars. 안정 우선은 1200, 검증 후 1800까지 검토 가능
+	static final int GZQR_PAYLOAD_LIMIT = 1500;	// 권장 1300 ~ 1800 bytes. GZQR_CHUNK_SIZE보다 header 길이만큼 커야합니다
+	static final int QR_IMAGE_SIZE 		= 420;	// 권장 380 ~ 600 px 권장.
+	static final int FRAME_DELAY_MS 	= 500;  // 권장 400 ~ 600 권장.
+
+	// 화면/서버 보호용 제한입니다. 너무 큰 로그가 들어오면 QR 생성 전에 거절합니다.
+	static final int MAX_SOURCE_BYTES 	= 1000000; 	// 권장 50000 ~ 200000 bytes. 200000 초과는 WAS 메모리/응답시간 확인 후 조정
+	static final int MAX_QR_COUNT 		= 200;
+
+	// QR 한 장에 들어갈 payload와 화면 표시용 메타데이터를 같이 들고 다니는 객체입니다.
 ```
 
 한 장의 조각 길이는 1200자 그대로입니다. 디코더도 최대 200장, 해제 결과 1000000 bytes로 맞췄으므로 추후 이 두 한도를 늘릴 때는 디코더 protocol.js의 상수도 같이 변경해야 합니다.
@@ -42,40 +54,45 @@ this.byteLength = "RAW".equals(mode) ? utf8Length(text) : text.length();
 
 ```java
 public static String escapeHtml(String input) {
-    if (input == null) return "";
-    StringBuilder result = null;
-    for (int i = 0; i < input.length(); i++) {
-        char c = input.charAt(i);
-        String replacement = null;
-        switch (c) {
-            case '&': replacement = "&amp;"; break;
-            case '<': replacement = "&lt;"; break;
-            case '>': replacement = "&gt;"; break;
-            case '"': replacement = "&quot;"; break;
-            case '\'': replacement = "&#x27;"; break;
-            default: break;
-        }
-        if (replacement != null && result == null) {
-            result = new StringBuilder(input.length() + 32);
-            result.append(input, 0, i);
-        }
-        if (result != null) {
-            if (replacement == null) result.append(c);
-            else result.append(replacement);
-        }
-    }
-    return result == null ? input : result.toString();
-}
+		if (input == null) return "";
+		StringBuilder result = null;
+
+		for (int i = 0; i < input.length(); i++) {
+			char c = input.charAt(i);
+			String replacement = null;
+			switch (c) {
+				case '&': replacement = "&amp;"; break;
+				case '<': replacement = "&lt;"; break;
+				case '>': replacement = "&gt;"; break;
+				case '"': replacement = "&quot;"; break;
+				case '\'': replacement = "&#x27;"; break;
+				default: break;
+			}
+
+			if (replacement != null && result == null) {
+				result = new StringBuilder(input.length() + 32);
+				result.append(input, 0, i);
+			}
+
+			if (result != null) {
+				if (replacement == null) result.append(c);
+				else result.append(replacement);
+			}
+		}
+
+		return result == null ? input : result.toString();
+	}
 ```
 
 ```java
 public static boolean hasLogText(String log) {
-    if (log == null) return false;
-    for (int i = 0; i < log.length(); i++) {
-        if (log.charAt(i) > 0x20) return true;
-    }
-    return false;
-}
+		if (log == null) return false;
+		for (int i = 0; i< log.length(); i++) {
+			if (log.charAt(i) > 0x20) return true;
+		}
+
+		return false;
+	}
 ```
 
 작은따옴표의 case 줄에는 **역슬래시가 포함**됩니다. &를 바꾸는 줄과 작은따옴표 줄을 특히 확인하세요.
@@ -86,57 +103,75 @@ public static boolean hasLogText(String log) {
 
 ```java
 public static List<QrPayload> buildPayloads(String log) throws IOException {
-    return buildPayloads(log, createGroupId());
-}
+		return buildPayloads(log, createGroupId());
+	}
 
-public static List<QrPayload> buildPayloads(String log, String groupId) throws IOException {
-    if (!hasLogText(log)) return new ArrayList<QrPayload>(0);
-    if (log.length() > MAX_SOURCE_BYTES) {
-        throw new IllegalArgumentException("Log source is too large. Maximum source size is " + MAX_SOURCE_BYTES + " bytes.");
-    }
-    return buildPayloads(log, log.getBytes(StandardCharsets.UTF_8), groupId);
-}
+	public static List<QrPayload> buildPayloads(String log, String groupId) throws IOException {
+		if (!hasLogText(log)) {
+			return new ArrayList<QrPayload>(0);
+		}
 
-// The request handler reuses this UTF-8 array for its size and payload generation.
-public static List<QrPayload> buildPayloads(String log, byte[] rawBytes, String groupId) throws IOException {
-    if (rawBytes.length > MAX_SOURCE_BYTES) {
-        throw new IllegalArgumentException("Log source is too large. Maximum source size is " + MAX_SOURCE_BYTES + " bytes.");
-    }
-    if (rawBytes.length <= RAW_SINGLE_LIMIT && canUseRawPayload(log)) {
-        String rawPayload = RAW_PREFIX + log;
-        if (rawBytes.length + RAW_PREFIX.length() <= GZQR_PAYLOAD_LIMIT) {
-            List<QrPayload> result = new ArrayList<QrPayload>(1);
-            result.add(new QrPayload("RAW", rawPayload, 1, 1));
-            return result;
-        }
-    }
+		if (log.length() > MAX_SOURCE_BYTES) {
+			throw new IllegalArgumentException("Log source is too large. Maximum source size is " + MAX_SOURCE_BYTES + " bytes.");
+		}
 
-    String encoded = gzipBase64Url(rawBytes);
-    if (GZIP_PREFIX.length() + encoded.length() <= GZ_SINGLE_LIMIT) {
-        List<QrPayload> result = new ArrayList<QrPayload>(1);
-        result.add(new QrPayload("GZ", GZIP_PREFIX + encoded, 1, 1));
-        return result;
-    }
+		return buildPayloads(log, log.getBytes(StandardCharsets.UTF_8), groupId);
+	}
 
-    String safeGroupId = normalizeGroupId(groupId);
-    int total = (encoded.length() + GZQR_CHUNK_SIZE - 1) / GZQR_CHUNK_SIZE;
-    if (total > MAX_QR_COUNT) {
-        throw new IllegalArgumentException("Compressed log is too large. Required QR count: "
-                + total + ". Maximum QR count: " + MAX_QR_COUNT + ".");
-    }
+	public static List<QrPayload> buildPayloads(String log, byte[] rawBytes, String groupId) throws IOException {
+		if (rawBytes.length > MAX_SOURCE_BYTES) {
+			throw new IllegalArgumentException("Log source is too large. Maximum source size is " + MAX_SOURCE_BYTES + " bytes.");
+		}
 
-    List<QrPayload> result = new ArrayList<QrPayload>(total);
-    for (int i = 0; i < total; i++) {
-        int start = i * GZQR_CHUNK_SIZE;
-        String chunk = encoded.substring(start, Math.min(start + GZQR_CHUNK_SIZE, encoded.length()));
-        String payload = GZQR_PREFIX + safeGroupId + ":" + (i + 1) + ":" + total + ":" + chunk;
-        if (payload.length() > GZQR_PAYLOAD_LIMIT) {
-            throw new IllegalArgumentException("QR payload exceeds " + GZQR_PAYLOAD_LIMIT + " bytes. Check chunk size.");
-        }
-        result.add(new QrPayload("GZQR", payload, i + 1, total));
-    }
-    return result;
-}
+		if (rawBytes.length <= RAW_SINGLE_LIMIT && canUseRawPayload(log)) {
+			String rawPayload = RAW_PREFIX + log;
+
+			if (rawBytes.length + RAW_PREFIX.length() <= GZQR_PAYLOAD_LIMIT) {
+				List<QrPayload> result = new ArrayList<QrPayload>(1);
+
+				result.add(new QrPayload("RAW", rawPayload, 1, 1));
+
+				return result;
+			}
+		}
+
+		String encoded = gzipBase64Url(rawBytes);
+
+		if (GZIP_PREFIX.length() + encoded.length() <= GZ_SINGLE_LIMIT) {
+			List<QrPayload> result = new ArrayList<QrPayload>(1);
+
+			result.add(new QrPayload("GZ", GZIP_PREFIX + encoded, 1, 1));
+
+			return result;
+		}
+
+		String safeGroupId = normalizeGroupId(groupId);
+		int total = (encoded.length() + GZQR_CHUNK_SIZE - 1) / GZQR_CHUNK_SIZE;
+
+		if (total > MAX_QR_COUNT) {
+			throw new IllegalArgumentException("Compressed log is too large. Required QR count: " + total + ". Maximum QR count: " + MAX_QR_COUNT + ".");
+		}
+
+		List<QrPayload> result = new ArrayList<QrPayload>(total);
+
+		for (int i = 0; i < total; i++) {
+			int start = i * GZQR_CHUNK_SIZE;
+			String chunk = encoded.substring(start, Math.min(start + GZQR_CHUNK_SIZE, encoded.length()));
+			String payload = GZQR_PREFIX + safeGroupId + ":" + (i + 1) + ":" + total + ":" + chunk;
+
+			if (payload.length() > GZQR_PAYLOAD_LIMIT) {
+				throw new IllegalArgumentException("QR payload exceeds " + GZQR_PAYLOAD_LIMIT + " bytes. Check chunk size.");
+			}
+
+			result.add(new QrPayload("GZQR", payload, i + 1, total));
+		}
+
+		return result;
+	}
+
+
+	// byte[] 로그를 GZIP으로 압축하고 base64url 문자열로 변환합니다.
+	// withoutPadding()을 쓰면 QR payload에서 불필요한 '=' 문자를 줄일 수 있습니다.
 ```
 
 200장이 넘으면 필요한 장수도 오류에 표시됩니다. 최종 payload 길이는 헤더를 포함해 매 조각 검사합니다.
@@ -145,12 +180,14 @@ public static List<QrPayload> buildPayloads(String log, byte[] rawBytes, String 
 
 ```java
 public static String gzipBase64Url(byte[] bytes) throws IOException {
-    ByteArrayOutputStream baos = new ByteArrayOutputStream(8192);
-    try (GZIPOutputStream gzip = new GZIPOutputStream(baos, 8192)) {
-        gzip.write(bytes);
-    }
-    return Base64.getUrlEncoder().withoutPadding().encodeToString(baos.toByteArray());
-}
+		ByteArrayOutputStream baos = new ByteArrayOutputStream(8192);
+
+		try (GZIPOutputStream gzip = new GZIPOutputStream(baos, 8192)) {
+			gzip.write(bytes);
+		}
+
+		return Base64.getUrlEncoder().withoutPadding().encodeToString(baos.toByteArray());
+	}
 ```
 
 기존 canUseRawPayload, isDecoderTrimChar, utf8Length, createGroupId는 그대로 둬도 됩니다. normalizeGroupId 안의 StringBuilder 생성만 아래처럼 바꿉니다.
@@ -165,27 +202,43 @@ StringBuilder safe = new StringBuilder(32);
 
 ```java
 public static String createQrPngBase64(String text, int size) throws Exception {
-    Map<EncodeHintType, Object> hints = new HashMap<EncodeHintType, Object>();
-    hints.put(EncodeHintType.CHARACTER_SET, "UTF-8");
-    hints.put(EncodeHintType.MARGIN, Integer.valueOf(4));
-    BitMatrix matrix = new QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, size, size, hints);
-    int width = matrix.getWidth();
-    int height = matrix.getHeight();
-    BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_BYTE_BINARY);
-    java.awt.image.WritableRaster raster = image.getRaster();
-    int[] row = new int[width];
-    for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x++) row[x] = matrix.get(x, y) ? 0 : 1;
-        raster.setSamples(0, y, width, 1, 0, row);
-    }
-    ByteArrayOutputStream baos = new ByteArrayOutputStream(8192);
-    try (javax.imageio.stream.MemoryCacheImageOutputStream png =
-            new javax.imageio.stream.MemoryCacheImageOutputStream(baos)) {
-        if (!ImageIO.write(image, "png", png)) throw new IOException("PNG writer is not available.");
-        png.flush();
-    }
-    return Base64.getEncoder().encodeToString(baos.toByteArray());
-}
+		Map<EncodeHintType, Object> hints = new HashMap<EncodeHintType, Object>();
+
+		// QR payload는 UTF-8 텍스트로 넣습니다. MARGIN은 QR 주변 여백입니다.
+		hints.put(EncodeHintType.CHARACTER_SET, "UTF-8");
+		hints.put(EncodeHintType.MARGIN, Integer.valueOf(4));
+
+		BitMatrix matrix = new QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, size, size, hints);
+
+		int width = matrix.getWidth();
+		int height = matrix.getHeight();
+
+		BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_BYTE_BINARY);
+
+		WritableRaster raster = image.getRaster();
+		int[] row = new int[width];
+
+		for (int y = 0; y < height; y++) {
+			for (int x = 0; x < width; x++) {
+				row[x] = matrix.get(x, y) ? 0 : 1;
+			}
+
+			raster.setSamples(0, y, width, 1, 0, row);
+		}
+
+		// 파일로 저장하지 않고 data:image/png;base64 로 바로 보여주기 위해 메모리에서 인코딩합니다
+		ByteArrayOutputStream baos = new ByteArrayOutputStream(8192);
+
+		try (MemoryCacheImageOutputStream png = new MemoryCacheImageOutputStream(baos)) {
+			if (!ImageIO.write(image, "png", png)) {
+				throw new IOException("PNG writer is not available.");
+			}
+
+			png.flush();
+		}
+
+		return Base64.getEncoder().encodeToString(baos.toByteArray());
+	}
 ```
 
 ## 7. 요청 처리 scriptlet 전체 교체
@@ -194,42 +247,51 @@ public static String createQrPngBase64(String text, int size) throws Exception {
 
 ```jsp
 <%
-// Must precede getParameter(). A filter that already parsed parameters must also use UTF-8.
-request.setCharacterEncoding("UTF-8");
-String submittedLog = request.getParameter("errorLog");
-boolean submitted = "POST".equalsIgnoreCase(request.getMethod());
-String errorMessage = "";
-List<QrPayload> qrPayloads = new ArrayList<QrPayload>();
-List<QrImage> qrImages = new ArrayList<QrImage>();
-int sourceBytes = 0;
-long generationMs = 0;
-if (submitted) {
-    if (!hasLogText(submittedLog)) {
-        errorMessage = "에러 로그를 입력하세요.";
-    } else {
-        long startedAt = System.nanoTime();
-        try {
-            if (submittedLog.length() > MAX_SOURCE_BYTES) {
-                throw new IllegalArgumentException("Log source is too large. Maximum source size is " + MAX_SOURCE_BYTES + " bytes.");
-            }
-            byte[] rawBytes = submittedLog.getBytes(StandardCharsets.UTF_8);
-            sourceBytes = rawBytes.length;
-            qrPayloads = buildPayloads(submittedLog, rawBytes, createGroupId());
-            qrImages = new ArrayList<QrImage>(qrPayloads.size());
-            for (QrPayload payload : qrPayloads) {
-                qrImages.add(new QrImage(payload, createQrPngBase64(payload.text, QR_IMAGE_SIZE)));
-            }
-        } catch (Exception e) {
-            application.log("Offline log QR generation failed", e);
-            String detail = e.getMessage() == null ? e.getClass().getName() : e.getMessage();
-            errorMessage = "QR 생성 실패: " + detail;
-            qrPayloads.clear();
-            qrImages.clear();
-        } finally {
-            generationMs = (System.nanoTime() - startedAt) / 1000000L;
-        }
-    }
-}
+	request.setCharacterEncoding("UTF-8");
+
+	String submittedLog = request.getParameter("errorLog");
+	boolean submitted = "POST".equalsIgnoreCase(request.getMethod());
+	String errorMessage = "";
+
+	List<QrPayload> qrPayloads = new ArrayList<QrPayload>();
+	List<QrImage> qrImages = new ArrayList<QrImage>();
+
+	int sourceBytes = 0;
+	long generationMs = 0;
+
+	if (submitted) {
+		// 입력값이 없으면 QR 생성 로직을 타지 않고 화면에 에러만 보여줍니다.
+		if (!hasLogText(submittedLog)) {
+			errorMessage = "에러 로그를 입력하세요";
+		} else {
+			long startedAt = System.nanoTime();
+
+			try {
+				if (submittedLog.length() > MAX_SOURCE_BYTES) {
+					throw new IllegalArgumentException("Log source is too large. Maximum source size is " + MAX_SOURCE_BYTES + " bytes.");
+				}
+
+				byte[] rawBytes = submittedLog.getBytes(StandardCharsets.UTF_8);
+				sourceBytes = rawBytes.length;
+
+				qrPayloads = buildPayloads(submittedLog, rawBytes, createGroupId());
+				qrImages = new ArrayList<QrImage>(qrPayloads.size());
+
+				for (QrPayload payload : qrPayloads) {
+					qrImages.add(new QrImage(payload, createQrPngBase64(payload.text, QR_IMAGE_SIZE)));
+				}
+			} catch (Exception e) {
+				application.log("Offline log QR generation failed", e);
+				String detail = e.getMessage() == null ? e.getClass().getName() : e.getMessage();
+				errorMessage = "QR 생성 실패: " + detail;
+
+				qrPayloads.clear();
+				qrImages.clear();
+			} finally {
+				generationMs = (System.nanoTime() - startedAt) / 1000000L;
+			}
+		}
+	}
 %>
 ```
 
@@ -259,23 +321,101 @@ head의 charset 다음에 아래 태그를 추가합니다(이미 있으면 중�
 
 ```jsp
 <style>
-body { font-family: Arial, "Malgun Gothic", sans-serif; margin: 0; padding: 24px; color: #1f2933; background: #f6f7f9; }
-.wrap { max-width: 980px; margin: 0 auto; }
-textarea { width: 100%; height: 450px; box-sizing: border-box; padding: 12px; font-family: Consolas, monospace; font-size: 14px; line-height: 1.45; border: 1px solid #b8c0cc; background: #fff; }
-button, select, input { font-size: 16px; padding: 8px 12px; }
-button { cursor: pointer; }
-.notice, .error, .result-area, .player-area, .payload-debug-list { border: 1px solid #d5dbe3; background: #fff; padding: 16px; margin-top: 18px; }
-.error { border-color: #d9534f; color: #a12622; background: #fff4f4; }
-.summary { line-height: 1.7; }
-.player-area { text-align: center; }
-.qr-screen { display: inline-block; max-width: 100%; overflow: auto; box-sizing: border-box; padding: 12px; border: 1px solid #d5dbe3; background: #fff; }
-#qrPlayerImage { display: block; width: <%= QR_IMAGE_SIZE %>px; height: <%= QR_IMAGE_SIZE %>px; max-width: none; border: 0; background: #fff; image-rendering: pixelated; }
-.player-status { margin: 12px 0; font-size: 18px; font-weight: bold; }
-.controls { margin-top: 12px; display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 8px; }
-#qrJumpIndex { width: 90px; }
-.payload-debug-list details { margin-top: 10px; }
-.payload-text { height: 120px; font-size: 12px; }
-</style>
+		body {
+			font-family: Arial, "Malgun Gothic", sans-serif;
+			margin: 0;
+			padding: 24px;
+			color: #1f2933;
+			background: #f6f7f9;
+		}
+		.wrap {
+			max-width: 980px;
+			margin: 0 auto;
+		}
+		textarea {
+			width: 100%;
+			height: 450px;
+			box-sizing: border-box;
+			padding: 12px;
+			font-family: Consolas, "Courier New", monospace;
+			font-size: 14px;
+			line-height: 1.45;
+			border: 1px solid #b8c0cc;
+			background: #fff;
+		}
+		button, select, input {
+			font-size: 16px;
+			padding: 8px 12px;
+		}
+		button {
+			cursor: pointer;
+		}
+		.notice,
+		.error,
+		.result-area,
+		.player-area,
+		.payload-debug-list {
+			border: 1px solid #d5dbe3;
+			background: #fff;
+			padding: 16px;
+			margin-top: 18px;
+		}
+		.error {
+			border-color: #d9534f;
+			color: #a12622;
+			background: #fff4f4;
+		}
+		.summary {
+			margin: 8px 0 0;
+			line-height: 1.7;
+		}
+		.player-area {
+			text-align: center;
+		}
+		#qrPlayerImage {
+			display: block;
+			width: <%=QR_IMAGE_SIZE %>px;
+			height: <%=QR_IMAGE_SIZE %>px;
+			max-width: none;
+			border: 0;
+			background: #fff;
+			image-rendering: pixelated;
+		}
+		.qr-screen {
+			display: inline-block;
+			max-width: 100%;
+			overflow: auto;
+			box-sizing: border-box;
+			padding: 12px;
+			border: 1px solid #d5dbe3;
+			background: #fff;
+		}
+		.player-status {
+			margin: 12px 0;
+			font-size: 18px;
+			font-weight: bold;
+		}
+		.controls {
+			margin-top: 12px;
+			display: flex;
+			justify-content: center;
+			align-items: center;
+			flex-wrap: wrap;
+			gap: 8px;
+		}
+		#qrJumpIndex {
+			width: 90px;
+		}
+		.payload-debug-list details {
+			margin-top: 10px;
+		}
+		.payload-text {
+			height: 120px;
+			min-height: 90px;
+			margin-top: 8px;
+			font-size: 12px;
+		}
+	</style>
 ```
 
 ## 9. player-area HTML 교체
@@ -284,26 +424,32 @@ button { cursor: pointer; }
 
 ```jsp
 <div class="player-area">
-<div class="qr-screen"><img id="qrPlayerImage" src="data:image/png;base64,<%= qrImages.get(0).base64 %>" alt="QR Code" width="<%= QR_IMAGE_SIZE %>" height="<%= QR_IMAGE_SIZE %>"></div>
-<div id="qrPlayerStatus" class="player-status" aria-live="polite">준비됨</div>
-<div class="controls">
-<button type="button" onclick="startPlay()">재생</button>
-<button type="button" onclick="stopPlay()">일시정지</button>
-<button type="button" onclick="prevFrame()">이전</button>
-<button type="button" onclick="nextFrame()">다음</button>
-<button type="button" onclick="resetPlay()">처음으로</button>
-</div>
-<div class="controls">
-<label for="qrSpeed">표시 시간</label>
-<select id="qrSpeed" onchange="changeSpeed()">
-<option value="500">0.5초</option><option value="700">0.7초</option>
-<option value="1000">1초</option><option value="1500">1.5초</option>
-</select>
-<label for="qrJumpIndex">QR 번호</label>
-<input id="qrJumpIndex" type="number" min="1" max="<%= qrImages.size() %>" value="1">
-<button type="button" onclick="jumpFrame()">이동</button>
-</div>
-</div>
+					<div class="qr-screen">
+						<img id="qrPlayerImage" src="data:image/png;base64,<%= qrImages.get(0).base64 %>" alt="QR Code" width="<%= QR_IMAGE_SIZE %>" height="<%=QR_IMAGE_SIZE %>">
+					</div>
+					<div id="qrPlayerStatus" class="player-status" aria-live="polite">준비됨</div>
+					<div class="controls">
+						<button type="button" onclick="startPlay()">재생</button>
+						<button type="button" onclick="stopPlay()">일시정지</button>
+						<button type="button" onclick="prevFrame()">이전</button>
+						<button type="button" onclick="nextFrame()">다음</button>
+						<button type="button" onclick="resetPlay()">처음으로</button>
+					</div>
+
+					<div class="controls">
+						<label for="qrSpeed">표시 시간</label>
+						<select id="qrSpeed" onchange="changeSpeed()">
+							<option value="500">0.5초</option>
+							<option value="700">0.7초</option>
+							<option value="1000">1초</option>
+							<option value="1500">1.5초</option>
+						</select>
+
+						<label for="qrJumpIndex">QR 번호</label>
+						<input id="qrJumpIndex" type="number" min="1" max="<%=qrImages.size() %>" value="1">
+						<button type="button" onclick="jumpFrame()">이동</button>
+					</div>
+				</div>
 ```
 
 이전/다음/번호 이동은 재생을 멈춘 상태에서 이동합니다. 멀티 QR 초기화는 디코더에서 새 로그를 읽을 때 사용합니다.
@@ -314,128 +460,201 @@ button { cursor: pointer; }
 
 ```jsp
 <script>
-// BEGIN QR PLAYER
-var qrFrames = [
-<% for (int i = 0; i < qrImages.size(); i++) { %>
-"data:image/png;base64,<%= qrImages.get(i).base64 %>"<%= i + 1 < qrImages.size() ? "," : "" %>
-<% } %>
-];
-var qrModes = [
-<% for (int i = 0; i < qrPayloads.size(); i++) { %>
-"<%= qrPayloads.get(i).mode %>"<%= i + 1 < qrPayloads.size() ? "," : "" %>
-<% } %>
-];
-var qrPayloadLengths = [
-<% for (int i = 0; i < qrPayloads.size(); i++) { %>
-<%= qrPayloads.get(i).byteLength %><%= i + 1 < qrPayloads.size() ? "," : "" %>
-<% } %>
-];
-var currentIndex = 0;
-var playTimer = null;
-var playing = false;
-var frameDelayMs = <%= FRAME_DELAY_MS %>;
-var renderToken = 0;
-var frameCache = {};
-var qrPlayerImage = document.getElementById("qrPlayerImage");
-var qrPlayerStatus = document.getElementById("qrPlayerStatus");
+					var qrFrames = [
+						<%
+							for (int i = 0; i < qrImages.size(); i += 1) {
+						%>
+								"data:image/png;base64,<%=qrImages.get(i).base64%>"<%= i + 1 < qrImages.size() ? "," : "" %>
+						<%
+							}
+						%>
+					];
+					var qrModes = [
+						<%
+							for (int i = 0; i < qrPayloads.size(); i += 1) {
+						%>
+								"<%= qrPayloads.get(i).mode%>"<%= i + 1 < qrPayloads.size() ? "," : "" %>
+						<%
+							}
+						%>
+					];
+					var qrPayloadLengths = [
+						<%
+							for (int i = 0; i < qrPayloads.size(); i += 1) {
+						%>
+								<%= qrPayloads.get(i).byteLength%><%= i + 1 < qrPayloads.size() ? "," : "" %>
+						<%
+							}
+						%>
+					];
+					var currentIndex = 0;
+					var playTimer = null;
+					var playing = false;
+					var frameDelayMs = <%= FRAME_DELAY_MS %>;
+					var renderToken = 0;
+					var frameCache = {};
+					var qrPlayerImage = document.getElementById("qrPlayerImage");
+					var qrPlayerStatus = document.getElementById("qrPlayerStatus");
 
-function normalizeIndex(index) {
-    return (index % qrFrames.length + qrFrames.length) % qrFrames.length;
-}
-function updatePlayerStatus() {
-    qrPlayerStatus.textContent = "QR " + (currentIndex + 1) + " / " + qrFrames.length
-        + " - " + qrModes[currentIndex] + " (" + qrPayloadLengths[currentIndex] + " bytes)"
-        + (playing ? " / 재생 중" : " / 일시정지")
-        + " / 한 바퀴 약 " + (qrFrames.length * frameDelayMs / 1000) + "초";
-}
-function prepareFrame(index, callback) {
-    var item = frameCache[index];
-    if (item) {
-        if (item.ready) { if (callback) callback(); }
-        else if (callback) item.callbacks.push(callback);
-        return;
-    }
-    item = { image: new Image(), ready: false, callbacks: callback ? [callback] : [] };
-    frameCache[index] = item;
-    item.image.onload = function () {
-        item.ready = true;
-        var callbacks = item.callbacks;
-        item.callbacks = [];
-        for (var i = 0; i < callbacks.length; i++) callbacks[i]();
-    };
-    item.image.onerror = function () {
-        delete frameCache[index];
-        item.callbacks = [];
-        stopPlay();
-        qrPlayerStatus.textContent = "QR " + (index + 1) + " 이미지 로드 실패";
-    };
-    item.image.src = qrFrames[index];
-}
-function showFrame(index, afterShow) {
-    index = normalizeIndex(index);
-    var token = ++renderToken;
-    prepareFrame(index, function () {
-        if (token !== renderToken) return;
-        currentIndex = index;
-        qrPlayerImage.src = qrFrames[index];
-        document.getElementById("qrJumpIndex").value = index + 1;
-        updatePlayerStatus();
-        var next = normalizeIndex(index + 1);
-        var next2 = normalizeIndex(index + 2);
-        for (var key in frameCache) {
-            if (Number(key) !== index && Number(key) !== next && Number(key) !== next2) delete frameCache[key];
-        }
-        prepareFrame(next);
-        prepareFrame(next2);
-        if (afterShow) afterShow();
-    });
-}
-function scheduleNext() {
-    clearTimeout(playTimer);
-    if (!playing) return;
-    playTimer = setTimeout(function () {
-        showFrame(currentIndex + 1, scheduleNext);
-    }, frameDelayMs);
-}
-function startPlay() {
-    stopPlay();
-    if (qrFrames.length < 2) return;
-    playing = true;
-    updatePlayerStatus();
-    scheduleNext();
-}
-function stopPlay() {
-    playing = false;
-    renderToken++;
-    clearTimeout(playTimer);
-    playTimer = null;
-    updatePlayerStatus();
-}
-function nextFrame() { stopPlay(); showFrame(currentIndex + 1); }
-function prevFrame() { stopPlay(); showFrame(currentIndex - 1); }
-function resetPlay() { stopPlay(); showFrame(0); }
-function changeSpeed() {
-    frameDelayMs = Number(document.getElementById("qrSpeed").value);
-    updatePlayerStatus();
-    if (playing) scheduleNext();
-}
-function jumpFrame() {
-    var number = Number(document.getElementById("qrJumpIndex").value);
-    if (number !== Math.floor(number) || number < 1 || number > qrFrames.length) {
-        qrPlayerStatus.textContent = "1 ~ " + qrFrames.length + " 사이의 정수를 입력하세요.";
-        return;
-    }
-    stopPlay();
-    showFrame(number - 1);
-}
-document.getElementById("qrSpeed").value = String(frameDelayMs);
-document.getElementById("qrJumpIndex").onkeydown = function (event) {
-    if (event.key === "Enter" || event.keyCode === 13) { event.preventDefault(); jumpFrame(); }
-};
-window.addEventListener("pagehide", stopPlay);
-showFrame(0);
-// END QR PLAYER
-</script>
+					function normalizeIndex(index) {
+						return (index % qrFrames.length + qrFrames.length) % qrFrames.length;
+					}
+
+					function updatePlayerStatus() {
+						qrPlayerStatus.textContent = "QR " + (currentIndex + 1) + " / " + qrFrames.length + " - " + qrModes[currentIndex] + " (" + qrPayloadLengths[currentIndex] + " bytes)" + (playing ? " / 재생 중" : " / 일시정지") + " / 한 바퀴 약 " + (qrFrames.length * frameDelayMs / 1000) + "초";
+					}
+
+					function prepareFrame(index, callback) {
+						var item = frameCache[index];
+
+						if (item) {
+							if (item.ready) {
+								if (callback) callback();
+							} else if (callback) {
+								item.callbacks.push(callback);
+							}
+
+							return;
+						}
+
+						item = {
+							image: new Image(),
+							ready: false,
+							callbacks: callback ? [callback] : []
+						};
+
+						frameCache[index] = item;
+
+						item.image.onload = function () {
+							item.ready = true;
+
+							var callbacks = item.callbacks;
+							item.callbacks = [];
+
+							for (var i = 0; i < callbacks.length; i++) {
+								callbacks[i]();
+							}
+						};
+
+						item.image.onerror = function () {
+							delete frameCache[index];
+							item.callbacks = [];
+							stopPlay();
+
+							qrPlayerStatus.textContent = "QR " + (index + 1) + " 이미지 로드 실패";
+						};
+
+						item.image.src = qrFrames[index];
+					}
+
+					function showFrame(index, afterShow) {
+						index = normalizeIndex(index);
+
+						var token = ++renderToken;
+
+						prepareFrame(index, function () {
+							if (token !== renderToken) return;
+
+							currentIndex = index;
+							qrPlayerImage.src = qrFrames[index];
+
+							document.getElementById("qrJumpIndex").value = index + 1;
+
+							updatePlayerStatus();
+
+							var next = normalizeIndex(index + 1);
+							var next2 = normalizeIndex(index + 2);
+
+							for (var key in frameCache) {
+								if (Number(key) !== index && Number(key) !== next && Number(key) !== next2) {
+									delete frameCache[key];
+								}
+							}
+
+							prepareFrame(next);
+							prepareFrame(next2);
+
+							if (afterShow) afterShow();
+						});
+					}
+
+					function scheduleNext() {
+						clearTimeout(playTimer);
+
+						if (!playing) return;
+
+						playTimer = setTimeout(function () {
+							showFrame(currentIndex + 1, scheduleNext);
+						}, frameDelayMs);
+					}
+
+					function startPlay() {
+						stopPlay();
+
+						if (qrFrames.length < 2) return;
+
+						playing = true;
+						updatePlayerStatus();
+						scheduleNext();
+					}
+
+					function stopPlay() {
+						playing = false;
+						renderToken++;
+
+						clearTimeout(playTimer);
+						playTimer = null;
+
+						updatePlayerStatus();
+					}
+
+					function nextFrame() {
+						stopPlay();
+						showFrame(currentIndex + 1);
+					}
+
+					function prevFrame() {
+						stopPlay();
+						showFrame(currentIndex - 1);
+					}
+
+					function resetPlay() {
+						stopPlay();
+						showFrame(0);
+					}
+
+					function changeSpeed() {
+						frameDelayMs = Number(document.getElementById("qrSpeed").value);
+
+						updatePlayerStatus();
+
+						if (playing) scheduleNext();
+					}
+
+					function jumpFrame() {
+						var number = Number(document.getElementById("qrJumpIndex").value);
+
+						if (number !== Math.floor(number) || number < 1 || number > qrFrames.length) {
+							qrPlayerStatus.textContent = "1 ~ " + qrFrames.length + " 사이의 정수를 입력하세요.";
+
+							return;
+						}
+
+						stopPlay();
+						showFrame(number - 1);
+					}
+
+					document.getElementById("qrSpeed").value = String(frameDelayMs);
+					document.getElementById("qrJumpIndex").onkeydown = function (event) {
+						if (event.key === "Enter" || event.keyCode === 13) {
+							event.preventDefault();
+							jumpFrame();
+						}
+					};
+
+					window.addEventListener("pagehide", stopPlay);
+					showFrame(0);
+				</script>
 ```
 
 재생은 준비된 프레임을 표시한 뒤 다음 타이머를 예약합니다. JS가 유지하는 preload 객체는 현재/다음/다다음 최대 3개입니다. 브라우저 자체의 이미지 캐시는 별도입니다.
