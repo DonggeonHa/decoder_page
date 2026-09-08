@@ -48,3 +48,15 @@ GZQR:v1:260616134652:3:3:CCCC
 ```bash
 npm test
 ```
+
+## 대용량 로그와 JSP 생성기
+
+- Java 8 / 기존 ZXing을 사용하는 [완성 JSP](artifacts/offline-log-qr-generator.jsp)
+- 직접 입력할 때 보는 [한국어 수동 반영 가이드](docs/JSP-TYPING-GUIDE.md)
+- 실행 환경, 성능 측정, 실기기 미검증 범위를 적은 [검증 결과](docs/VALIDATION.md)
+
+JSP와 디코더는 최대 200장, 복원 결과 1,000,000 UTF-8 bytes를 지원합니다. 멀티 QR 스캔을 중지해도 받은 조각은 유지되며 이어서 스캔할 수 있습니다. 새로고침하면 수집 상태는 사라집니다. 새 로그는 멀티 QR 초기화 후 스캔하세요.
+
+누락 번호를 복사해 JSP에서 해당 번호로 이동하거나, QR payload를 한 조각씩 입력창에 붙여넣고 Decode를 눌러 수집할 수 있습니다. Copy Output은 복원 문자열을 사용하여 textarea 표시 과정에서 정규화되는 CRLF도 유지합니다.
+
+검증 명령과 필요한 테스트 전용 도구는 검증 결과 문서에 설명했습니다. 검증 JAR, Node, 브라우저 자동화 도구는 인트라넷 JSP 배포에 필요하지 않습니다.

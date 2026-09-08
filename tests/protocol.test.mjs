@@ -77,3 +77,19 @@ test("rejects conflicting duplicate index without overwriting the first chunk", 
   assert.equal(addMultiChunk(collector, parseQrPayload("GZQR:v1:logA:2:2:BBB")).complete, true);
   assert.equal(assembleMultiGzip(collector), "GZ:AAABBB");
 });
+
+test('rejects group counts above the supported 200-frame limit', () => {
+  assert.equal(parseQrPayload('GZQR:v1:large:1:201:AAA').type, 'invalid');
+  assert.equal(parseQrPayload('GZQR:v1:large:1:1e100:AAA').type, 'invalid');
+});
+
+test('accepts 200 reversed chunks, ignores duplicates, and preserves missing indexes', () => {
+  const collector = createMultiCollector();
+  for (let index = 200; index >= 2; index--) {
+    assert.equal(addMultiChunk(collector, parseQrPayload(`GZQR:v1:large:${index}:200:AAA`)).ok, true);
+  }
+  assert.deepEqual(getMissingIndexes(collector), [1]);
+  assert.equal(addMultiChunk(collector, parseQrPayload('GZQR:v1:large:2:200:AAA')).duplicate, true);
+  assert.equal(addMultiChunk(collector, parseQrPayload('GZQR:v1:large:1:200:AAA')).complete, true);
+  assert.equal(assembleMultiGzip(collector), 'GZ:' + 'AAA'.repeat(200));
+});

@@ -4,10 +4,11 @@ import {
   createMultiCollector,
   getMissingIndexes,
   getReceivedIndexes,
+  isCollectorComplete,
   parseQrPayload
-} from "./protocol.js";
-import { gunzipBase64Url } from "./gzip.js";
-import { createQrScanner } from "./scanner.js";
+} from "./protocol.js?v=20260908-200qr";
+import { gunzipBase64Url } from "./gzip.js?v=20260908-200qr";
+import { createQrScanner } from "./scanner.js?v=20260908-200qr";
 
 var input = document.getElementById("input");
 var output = document.getElementById("output");
@@ -23,10 +24,14 @@ var scannerOverlay = document.getElementById("scannerOverlay");
 var scanSingleBtn = document.getElementById("scanSingleBtn");
 var scanMultiBtn = document.getElementById("scanMultiBtn");
 var resetMultiBtn = document.getElementById("resetMultiBtn");
+var copyMissingBtn = document.getElementById("copyMissingBtn");
 var stopScanBtn = document.getElementById("stopScanBtn");
 
 var mode = "single";
 var collector = createMultiCollector();
+var decodedText = "";
+var decodeVersion = 0;
+var scanRequestId = 0;
 var scanner = createQrScanner({
   video: video,
   overlay: scannerOverlay,
@@ -47,6 +52,11 @@ function setScanStatus(message, type) {
 function updateMeters() {
   inputMeter.textContent = input.value.length + " chars";
   outputMeter.textContent = output.value.length + " chars";
+}
+
+function setDecodedText(text) {
+  decodedText = text;
+  output.value = text;
 }
 
 function detectEnvironment() {
@@ -86,9 +96,10 @@ function detectEnvironment() {
 }
 
 async function decodeInput() {
+  var version = ++decodeVersion;
   var raw = input.value;
   var parsed = parseQrPayload(raw);
-  output.value = "";
+  setDecodedText("");
   updateMeters();
 
   try {
@@ -98,21 +109,23 @@ async function decodeInput() {
     }
 
     if (parsed.type === "raw") {
-      output.value = parsed.text;
+      setDecodedText(parsed.text);
       setStatus("RAW text loaded.", "ok");
       updateMeters();
       return;
     }
 
     if (parsed.type === "gzip") {
-      output.value = await gunzipBase64Url(parsed.encoded);
+      var text = await gunzipBase64Url(parsed.encoded);
+      if (version !== decodeVersion) return;
+      setDecodedText(text);
       setStatus("GZIP decoded.", "ok");
       updateMeters();
       return;
     }
 
     if (parsed.type === "multi-gzip") {
-      setStatus("멀티 QR 조각입니다. 멀티 QR 스캔으로 전체 조각을 모아주세요.", "error");
+      await handleMultiPayload(parsed);
       return;
     }
 
@@ -121,10 +134,11 @@ async function decodeInput() {
       return;
     }
 
-    output.value = parsed.text;
+    setDecodedText(parsed.text);
     setStatus("No prefix found. Input copied to output.", "ok");
     updateMeters();
   } catch (error) {
+    if (version !== decodeVersion) return;
     setStatus(error && error.message ? error.message : "Decode failed.", "error");
   }
 }
@@ -181,6 +195,9 @@ async function handleMultiPayload(payload) {
 function renderMultiStatus(prefix) {
   var received = getReceivedIndexes(collector);
   var missing = getMissingIndexes(collector);
+  scanMultiBtn.textContent = collector.id && !isCollectorComplete(collector)
+    ? "멀티 QR 이어서 스캔" : "멀티 QR 스캔 시작";
+  copyMissingBtn.disabled = missing.length === 0;
 
   if (!collector.id) {
     multiStatus.classList.add("hidden");
@@ -206,17 +223,25 @@ function resetMultiCollector() {
 }
 
 function resetMultiScan() {
+  decodeVersion++;
   resetMultiCollector();
   input.value = "";
+  setDecodedText("");
   updateMeters();
   setScanStatus(mode === "multi" ? "멀티 QR 수집을 초기화했습니다. 다시 스캔하세요." : "멀티 QR 수집을 초기화했습니다.", "ok");
 }
 
 async function startScanner(nextMode) {
+  var requestId = ++scanRequestId;
   mode = nextMode;
   if (mode === "multi") {
-    resetMultiCollector();
-    setScanStatus("멀티 QR 스캔을 시작합니다. 아무 순서로 스캔해도 됩니다.");
+    if (!collector.id || isCollectorComplete(collector)) {
+      resetMultiCollector();
+      decodeVersion++;
+      setDecodedText("");
+      updateMeters();
+    }
+    setScanStatus("멀티 QR 스캔을 시작합니다. 받은 조각은 유지됩니다.");
   } else {
     resetMultiCollector();
     setScanStatus("단일 QR 스캔을 시작합니다.");
@@ -225,7 +250,9 @@ async function startScanner(nextMode) {
   try {
     setScanButtons(true);
     await scanner.start();
+    if (requestId === scanRequestId) setScanButtons(scanner.isRunning());
   } catch (error) {
+    if (requestId !== scanRequestId) return;
     setScanButtons(false);
     setScanStatus(error && error.message ? error.message : "카메라를 시작하지 못했습니다.", "error");
   }
@@ -248,13 +275,13 @@ async function pasteFromClipboard() {
 }
 
 async function copyOutput() {
-  if (!output.value) {
+  if (!decodedText) {
     setStatus("Output is empty.", "error");
     return;
   }
 
   try {
-    await navigator.clipboard.writeText(output.value);
+    await navigator.clipboard.writeText(decodedText);
     setStatus("Output copied.", "ok");
   } catch (error) {
     output.focus();
@@ -266,8 +293,12 @@ async function copyOutput() {
 document.getElementById("decodeBtn").onclick = decodeInput;
 document.getElementById("pasteBtn").onclick = pasteFromClipboard;
 document.getElementById("clearBtn").onclick = function () {
+  decodeVersion++;
+  scanRequestId++;
+  scanner.stop();
+  setScanButtons(false);
   input.value = "";
-  output.value = "";
+  setDecodedText("");
   resetMultiCollector();
   setStatus("");
   setScanStatus("스캔 대기 중");
@@ -282,11 +313,25 @@ scanMultiBtn.onclick = function () {
   startScanner("multi");
 };
 resetMultiBtn.onclick = resetMultiScan;
+copyMissingBtn.onclick = async function () {
+  try {
+    await navigator.clipboard.writeText(getMissingIndexes(collector).join(", "));
+    setScanStatus("빠진 QR 번호를 복사했습니다.", "ok");
+  } catch (error) {
+    setScanStatus("번호 복사가 차단되었습니다. 아래 빠진 조각 번호를 확인하세요.", "error");
+  }
+};
 stopScanBtn.onclick = function () {
+  scanRequestId++;
   scanner.stop();
   setScanButtons(false);
 };
 input.oninput = updateMeters;
+window.addEventListener("pagehide", function () {
+  scanRequestId++;
+  scanner.stop();
+  setScanButtons(false);
+});
 
 detectEnvironment();
 updateMeters();

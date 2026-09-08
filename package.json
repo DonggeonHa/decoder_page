@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test tests/protocol.test.mjs tests/gzip.test.mjs tests/scanner.test.mjs tests/jsp-generator.test.mjs",
+    "test:deps": "node scripts/fetch-test-deps.mjs",
+    "test:java": "node scripts/verify-java.mjs",
+    "test:browser": "node scripts/verify-browser.mjs"
   }
 }

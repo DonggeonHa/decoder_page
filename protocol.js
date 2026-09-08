@@ -1,6 +1,8 @@
 export var SINGLE_RAW_PREFIX = "RAW:";
 export var SINGLE_GZIP_PREFIX = "GZ:";
 export var MULTI_PREFIX = "GZQR:";
+export var MAX_QR_COUNT = 200;
+export var MAX_SOURCE_BYTES = 1000000;
 
 export function stripSinglePrefix(value, prefix) {
   return value.slice(prefix.length).replace(/^\s+/, "");
@@ -62,6 +64,10 @@ export function parseMultiPayload(raw) {
 
   if (!Number.isInteger(index) || !Number.isInteger(total) || index < 1 || total < 1 || index > total) {
     return { type: "invalid", reason: "GZQR index/total is invalid." };
+  }
+
+  if (total > MAX_QR_COUNT) {
+    return { type: "invalid", reason: "Maximum QR count is " + MAX_QR_COUNT + "." };
   }
 
   if (!chunk) {

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <title>QR GZIP Decoder</title>
-  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./styles.css?v=20260908-200qr">
 </head>
 <body>
   <main>
@@ -31,10 +31,12 @@
         <button id="scanSingleBtn" class="primary" type="button">단일 QR 스캔</button>
         <button id="scanMultiBtn" type="button">멀티 QR 스캔 시작</button>
         <button id="resetMultiBtn" type="button" disabled>멀티 QR 초기화</button>
+        <button id="copyMissingBtn" type="button" disabled>빠진 번호 복사</button>
         <button id="stopScanBtn" type="button" disabled>스캔 중지</button>
       </div>
 
       <div id="scanStatus" class="status">스캔 대기 중</div>
+      <p class="scan-help">최대 200장. 중지 후 이어서 스캔할 수 있습니다. 다른 로그는 멀티 QR 초기화 후 스캔하세요. 새로고침하면 받은 조각이 지워집니다.</p>
       <div id="multiStatus" class="multi-status hidden"></div>
     </section>
 
@@ -43,7 +45,7 @@
         <h2>Input</h2>
         <span id="inputMeter" class="meter">0 chars</span>
       </div>
-      <textarea id="input" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="RAW:, GZ:, 또는 GZQR: 값을 붙여넣거나 스캔하세요."></textarea>
+      <textarea id="input" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="RAW:, GZ:를 해제하거나 GZQR: 조각을 하나씩 붙여넣고 Decode를 누르세요."></textarea>
       <div class="actions">
         <button id="decodeBtn" class="primary" type="button">Decode</button>
         <button id="pasteBtn" type="button">Paste</button>
@@ -64,6 +66,6 @@
     </section>
   </main>
 
-  <script type="module" src="./app.js"></script>
+  <script type="module" src="./app.js?v=20260908-200qr"></script>
 </body>
 </html>

@@ -159,6 +159,7 @@ video {
 .status,
 #status,
 .multi-status {
+  white-space: pre-wrap;
   min-height: 24px;
   margin-top: 10px;
   color: #333333;
@@ -196,3 +197,5 @@ video {
 .hidden {
   display: none;
 }
+
+.scan-help { margin-top: 8px; font-size: 13px; }

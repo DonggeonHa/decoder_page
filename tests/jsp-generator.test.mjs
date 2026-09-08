@@ -30,8 +30,9 @@ test("offline JSP generator core builds RAW, GZ, and GZQR payloads", () => {
   writeFileSync(javaPath, buildHarness(core));
 
   try {
-    execFileSync("javac", ["--release", "8", javaPath], { cwd: tempDir, stdio: "pipe" });
-    execFileSync("java", ["-cp", tempDir, "JspCoreHarness"], { cwd: tempDir, stdio: "pipe" });
+    const javaBin = name => process.env.JAVA_HOME ? join(process.env.JAVA_HOME, "bin", name) : name;
+    execFileSync(javaBin("javac"), ["-encoding", "UTF-8", "-source", "8", "-target", "8", javaPath], { cwd: tempDir, stdio: "pipe" });
+    execFileSync(javaBin("java"), ["-cp", tempDir, "JspCoreHarness"], { cwd: tempDir, stdio: "pipe" });
   } finally {
     rmSync(tempDir, { force: true, recursive: true });
   }
@@ -141,7 +142,7 @@ ${core}
   }
 
   private static void verifyQrCountLimitRejected() throws Exception {
-    String log = makeNoisyLog(50000);
+    String log = makeNoisyLog(300000);
     try {
       buildPayloads(log, "manyparts");
       throw new AssertionError("large compressed log should be rejected before rendering too many QR images");
