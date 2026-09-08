@@ -26,6 +26,12 @@ var scanMultiBtn = document.getElementById("scanMultiBtn");
 var resetMultiBtn = document.getElementById("resetMultiBtn");
 var copyMissingBtn = document.getElementById("copyMissingBtn");
 var stopScanBtn = document.getElementById("stopScanBtn");
+var downloadBtn = document.getElementById("downloadBtn");
+var exportStatus = document.getElementById("exportStatus");
+
+// Conservative UI policy, not an OS clipboard capacity guarantee.
+// JavaScript length counts UTF-16 code units; larger logs use local TXT export.
+var CLIPBOARD_TEXT_LIMIT = 200000;
 
 var mode = "single";
 var collector = createMultiCollector();
@@ -57,6 +63,13 @@ function updateMeters() {
 function setDecodedText(text) {
   decodedText = text;
   output.value = text;
+  downloadBtn.disabled = !text;
+  setExportStatus("");
+}
+
+function setExportStatus(message, type) {
+  exportStatus.textContent = message || "";
+  exportStatus.className = "status " + (type || "");
 }
 
 function detectEnvironment() {
@@ -276,17 +289,55 @@ async function pasteFromClipboard() {
 
 async function copyOutput() {
   if (!decodedText) {
-    setStatus("Output is empty.", "error");
+    setExportStatus("복원된 내용이 없습니다.", "error");
     return;
   }
 
+  if (decodedText.length > CLIPBOARD_TEXT_LIMIT) {
+    setExportStatus("대용량 로그는 클립보드 복사가 실패할 수 있어 복사하지 않았습니다. TXT 저장 버튼을 사용하세요.", "error");
+    return;
+  }
+
+  var version = decodeVersion;
   try {
     await navigator.clipboard.writeText(decodedText);
-    setStatus("Output copied.", "ok");
+    if (version !== decodeVersion) return;
+    // Android may show a native failure toast without rejecting this promise.
+    setExportStatus("복사를 요청했습니다. 붙여넣기로 내용을 확인하세요. 실패하면 TXT 저장을 사용하세요.", "ok");
   } catch (error) {
+    if (version !== decodeVersion) return;
     output.focus();
     output.select();
-    setStatus("Clipboard write was blocked. Copy manually.", "error");
+    setExportStatus("클립보드에 복사하지 못했습니다. TXT 저장을 사용하거나 선택된 내용을 직접 복사하세요.", "error");
+  }
+}
+
+function downloadOutput() {
+  if (!decodedText) {
+    setExportStatus("저장할 복원 내용이 없습니다.", "error");
+    return;
+  }
+
+  var url = null;
+  var link = null;
+  try {
+    // Use the retained source, not textarea.value (which normalizes CRLF).
+    // Do not add/remove a BOM, trim whitespace, or convert line endings.
+    var blob = new Blob([decodedText], { type: "text/plain;charset=utf-8", endings: "transparent" });
+    url = URL.createObjectURL(blob);
+    link = document.createElement("a");
+    link.href = url;
+    link.download = "decoded-log-" + new Date().toISOString().replace(/[:.]/g, "-").replace(/Z$/, "") + ".txt";
+    link.hidden = true;
+    document.body.appendChild(link);
+    link.click();
+    setExportStatus("TXT 다운로드를 요청했습니다. 기기의 다운로드 목록에서 파일을 확인하세요. 로그는 서버로 전송하지 않습니다.", "ok");
+  } catch (error) {
+    setExportStatus("TXT 다운로드를 시작하지 못했습니다. Chrome에서 다시 시도하세요. 현재 복원 내용은 유지됩니다.", "error");
+  } finally {
+    if (link) link.remove();
+    // Give the browser time to consume the URL before releasing Blob memory.
+    if (url) setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
   }
 }
 
@@ -306,6 +357,7 @@ document.getElementById("clearBtn").onclick = function () {
   input.focus();
 };
 document.getElementById("copyBtn").onclick = copyOutput;
+downloadBtn.onclick = downloadOutput;
 scanSingleBtn.onclick = function () {
   startScanner("single");
 };
