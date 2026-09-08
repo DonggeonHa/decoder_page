@@ -6,9 +6,9 @@ import {
   getReceivedIndexes,
   isCollectorComplete,
   parseQrPayload
-} from "./protocol.js?v=20260908-200qr";
-import { gunzipBase64Url } from "./gzip.js?v=20260908-200qr";
-import { createQrScanner } from "./scanner.js?v=20260908-200qr";
+} from "./protocol.js?v=20260908-300qr-5mb";
+import { gunzipBase64Url } from "./gzip.js?v=20260908-300qr-5mb";
+import { createQrScanner } from "./scanner.js?v=20260908-300qr-5mb";
 
 var input = document.getElementById("input");
 var output = document.getElementById("output");

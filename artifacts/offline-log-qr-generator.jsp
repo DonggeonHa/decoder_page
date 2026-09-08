@@ -46,8 +46,8 @@
 	static final int FRAME_DELAY_MS 	= 500;  // 권장 400 ~ 600 권장.
 
 	// 화면/서버 보호용 제한입니다. 너무 큰 로그가 들어오면 QR 생성 전에 거절합니다.
-	static final int MAX_SOURCE_BYTES 	= 1000000; 	// 권장 50000 ~ 200000 bytes. 200000 초과는 WAS 메모리/응답시간 확인 후 조정
-	static final int MAX_QR_COUNT 		= 200;
+	static final int MAX_SOURCE_BYTES 	= 5000000; // 단독 사용자 설정. WAS 메모리와 POST 제한은 별도 확인 필요
+	static final int MAX_QR_COUNT 		= 300;
 
 	// QR 한 장에 들어갈 payload와 화면 표시용 메타데이터를 같이 들고 다니는 객체입니다.
 	static class QrPayload {

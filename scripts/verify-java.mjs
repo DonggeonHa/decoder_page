@@ -35,4 +35,4 @@ for (const line of readFileSync(join(output, 'fixtures.txt'), 'utf8').trim().spl
   assert.equal(actual, expected);
   count++;
 }
-console.log(`Java 8 generator -> JavaScript decoder: ${count} fixtures passed (including 200 reversed chunks).`);
+console.log(`Java 8 generator -> JavaScript decoder: ${count} fixtures passed (including 300 reversed chunks).`);

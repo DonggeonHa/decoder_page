@@ -1,8 +1,8 @@
 export var SINGLE_RAW_PREFIX = "RAW:";
 export var SINGLE_GZIP_PREFIX = "GZ:";
 export var MULTI_PREFIX = "GZQR:";
-export var MAX_QR_COUNT = 200;
-export var MAX_SOURCE_BYTES = 1000000;
+export var MAX_QR_COUNT = 300;
+export var MAX_SOURCE_BYTES = 5000000;
 
 export function stripSinglePrefix(value, prefix) {
   return value.slice(prefix.length).replace(/^\s+/, "");

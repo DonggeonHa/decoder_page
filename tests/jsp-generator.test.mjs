@@ -142,7 +142,7 @@ ${core}
   }
 
   private static void verifyQrCountLimitRejected() throws Exception {
-    String log = makeNoisyLog(300000);
+    String log = makeNoisyLog(450000);
     try {
       buildPayloads(log, "manyparts");
       throw new AssertionError("large compressed log should be rejected before rendering too many QR images");

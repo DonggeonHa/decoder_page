@@ -1,4 +1,4 @@
-import { base64UrlToBytes, MAX_SOURCE_BYTES } from "./protocol.js?v=20260908-200qr";
+import { base64UrlToBytes, MAX_SOURCE_BYTES } from "./protocol.js?v=20260908-300qr-5mb";
 
 export async function gunzipBase64Url(encoded) {
   if (!("DecompressionStream" in window)) {
